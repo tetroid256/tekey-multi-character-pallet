@@ -85,7 +85,7 @@
       <label class="field">キャラシート URL
         <input type="url" id="ytUrl" placeholder="https://yutorize.2-d.jp/ytsheet/sw2.5/?id=xxxxxx">
       </label>
-      <p class="hint">取得できない場合（ブラウザの CORS 制限など）は、<a id="ytJsonLink" href="#" target="_blank" rel="noopener">JSON 出力</a> を開いて中身をすべてコピーし、下に貼り付けてください。</p>
+      <p class="hint">URL だけで取り込めます。取得できない場合は <a id="ytJsonLink" href="#" target="_blank" rel="noopener">JSON 出力</a> を開いて中身をすべてコピーし、下に貼り付けてください。</p>
       <label class="field">JSON を貼り付け（任意）
         <textarea id="ytJson" rows="5" placeholder='{"characterName": ...}'></textarea>
       </label>
@@ -122,10 +122,11 @@
       </fieldset>
 
       <fieldset class="field">
-        <legend>名前と文字色の指定方法</legend>
-        <label><input type="radio" name="nameMode" value="inline"> メッセージ末尾に <code>@[name]:名前@#色</code> を付ける</label>
-        <label><input type="radio" name="nameMode" value="param"> API の name / color パラメータで送る</label>
-        <label><input type="radio" name="nameMode" value="none"> 付けない</label>
+        <legend>名前と文字色</legend>
+        <label class="inline"><input type="checkbox" data-setting="withName"> キャラ名と文字色を付けて送る</label>
+        <p class="hint">API 送信では <code>name</code> / <code>color</code> パラメータで、コピー送信ではメッセージ末尾の <code>@[name]:名前@#色</code> で指定します。</p>
+        <label class="inline"><input type="checkbox" data-setting="isDirection"> API 送信で末尾コマンド（<code>@BGM停止</code>、<code>@[tab]:タブ名</code> など）を有効にする（isDirection）</label>
+        <p class="hint">Tekey 側の処理が重くなるため、使わない場合はオフのままにしてください。</p>
       </fieldset>
 
       <fieldset class="field grid2">
@@ -134,14 +135,14 @@
         <label>ルーム ID<input type="text" data-setting="roomId" autocomplete="off"></label>
         <label>ルームパスワード<input type="password" data-setting="roomPassword" autocomplete="off"></label>
         <label>送信先タブ（既定）<input type="text" data-setting="tab" placeholder="空欄で左端のタブ"></label>
-        <label>ダイスボット（システムID）<input type="text" data-setting="system" placeholder="SwordWorld2.5"></label>
+        <label>ダイスボット（空欄でルームの設定）<input type="text" data-setting="system" placeholder="SwordWorld2.5"></label>
         <label>エンドポイント<input type="url" data-setting="endpoint"></label>
       </fieldset>
-      <p class="hint">API キーなどはこのブラウザの localStorage にだけ保存されます。アプリデータの書き出しには含まれません。</p>
+      <p class="hint">API キーは <a href="https://helps.tekey.jp/api-about/" target="_blank" rel="noopener">Tekey への問い合わせ</a>で発行してもらえます。API キーなどはこのブラウザの localStorage にだけ保存され、アプリデータの書き出しには含まれません。送信回数の上限は 1 分に 60 回、1 日に 5,000 回です。</p>
 
       <details class="field">
         <summary>詳細（API パラメータ名・通信方式）</summary>
-        <p class="hint">Tekey API のパラメータ名がヘルプと違う場合はここで合わせてください。空欄の項目は送信しません。</p>
+        <p class="hint">初期値は Tekey API ヘルプ（2026/10/31 時点）の仕様どおりです。通常は変更不要です。空欄の項目は送信しません。</p>
         <div class="grid2">
           <label>API キー<input type="text" data-param="apiKey"></label>
           <label>コマンド名<input type="text" data-param="command"></label>
@@ -153,11 +154,11 @@
           <label>文字色<input type="text" data-param="color"></label>
           <label>タブ<input type="text" data-param="tab"></label>
           <label>ダイスボット<input type="text" data-param="system"></label>
+          <label>演出フラグ<input type="text" data-param="isDirection"></label>
           <label>HTTP メソッド
             <select data-setting="method"><option value="POST">POST</option><option value="GET">GET</option></select>
           </label>
         </div>
-        <label class="inline"><input type="checkbox" data-setting="colorHash"> 色パラメータに # を付ける</label>
         <label class="inline"><input type="checkbox" data-setting="readResponse"> API の応答を読む（CORS が許可されている場合のみ動きます）</label>
         <p class="hint">応答を読まない場合（既定）は no-cors で送信します。届いたかどうかは Tekey の画面で確認してください。</p>
       </details>

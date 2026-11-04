@@ -11,31 +11,35 @@
   const SETTINGS_TAB = '__settings';
   const SECRET_KEYS = ['apiKey', 'roomPassword'];
 
+  const SETTINGS_VERSION = 2;
+  // https://helps.tekey.jp/api-about/ の sendChat 仕様に合わせた既定値
   const DEFAULT_SETTINGS = {
+    version: SETTINGS_VERSION,
     sendMode: 'copy',
     copyOnFail: true,
     clickAction: 'fill',
-    nameMode: 'inline',
+    withName: true,
+    isDirection: false,
     endpoint: 'https://tekey.jp/api',
     apiKey: '',
     roomId: '',
     roomPassword: '',
     tab: '',
-    system: 'SwordWorld2.5',
+    system: '',
     method: 'POST',
     readResponse: false,
-    colorHash: false,
     params: {
-      apiKey: 'apiKey',
+      apiKey: 'apikey',
       command: 'command',
       commandValue: 'sendChat',
-      roomId: 'roomId',
+      roomId: 'room',
       roomPassword: 'password',
       message: 'message',
       name: 'name',
       color: 'color',
       tab: 'tab',
-      system: 'system',
+      system: 'bot',
+      isDirection: 'isDirection',
     },
   };
 
@@ -65,8 +69,18 @@
 
   function normState(s) {
     s = s || {};
-    const settings = Object.assign({}, DEFAULT_SETTINGS, s.settings || {});
-    settings.params = Object.assign({}, DEFAULT_SETTINGS.params, (s.settings && s.settings.params) || {});
+    const saved = s.settings || {};
+    const settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+    if ((saved.version || 1) < 2) {
+      // v1 は API パラメータ名が仮の値だったので、正式な仕様の値に置き換える
+      settings.params = Object.assign({}, DEFAULT_SETTINGS.params);
+      settings.withName = saved.nameMode !== 'none';
+      delete settings.nameMode;
+      delete settings.colorHash;
+      settings.version = SETTINGS_VERSION;
+    } else {
+      settings.params = Object.assign({}, DEFAULT_SETTINGS.params, saved.params || {});
+    }
     const characters = (Array.isArray(s.characters) ? s.characters : []).map(normChar);
     return {
       settings,
@@ -147,7 +161,7 @@
     const s = state.settings;
     const el = $('#modeIndicator');
     if (s.sendMode === 'api') {
-      const ready = s.apiKey && s.roomId;
+      const ready = s.apiKey && s.roomId && s.roomPassword;
       el.textContent = ready ? 'API 送信' : 'API 送信（未設定）';
       el.className = 'mode-indicator ' + (ready ? 'ok' : 'warn');
     } else {
@@ -329,8 +343,9 @@
    * 送信
    * ------------------------------------------------------------------ */
 
+  /** コピー送信用: 名前と色を末尾コマンド（@[name]:名前@#色）で付ける */
   function decorate(text, ch) {
-    if (!ch || state.settings.nameMode !== 'inline') return text;
+    if (!ch || !state.settings.withName) return text;
     return text + '@[name]:' + ch.name + (ch.color ? '@' + ch.color.toUpperCase() : '');
   }
 
@@ -362,12 +377,13 @@
     put(p.roomId, s.roomId);
     put(p.roomPassword, s.roomPassword);
     put(p.message, message);
-    if (ch && s.nameMode === 'param') {
+    if (ch && s.withName) {
       put(p.name, ch.name);
-      put(p.color, s.colorHash ? ch.color : ch.color.replace('#', ''));
+      put(p.color, ch.color.replace('#', '').toUpperCase()); // 仕様: 先頭の # は不要
     }
     put(p.tab, (ch && ch.tab) || s.tab);
     put(p.system, s.system);
+    if (s.isDirection) put(p.isDirection, 'true');
     return q;
   }
 
@@ -384,12 +400,15 @@
     }
     const r = await fetch(url, opts);
     const text = await r.text();
-    let ok = r.ok;
-    try {
-      const j = JSON.parse(text);
-      if (j && (j.result === false || j.status === 'error' || j.error)) ok = false;
-    } catch (e) { /* JSON でない応答 */ }
-    return { ok, note: ok ? '送信しました' : '送信エラー: ' + (text.slice(0, 200) || r.status) };
+    let j = null;
+    try { j = JSON.parse(text); } catch (e) { /* JSON でない応答 */ }
+    if (r.ok && (!j || j.result === 'OK')) return { ok: true, note: '送信しました' };
+    if (r.status === 429) {
+      const wait = r.headers.get('Retry-After') || (j && j.retryAfter) || '';
+      return { ok: false, note: '送信回数の上限に達しました' + (wait ? '（' + wait + ' 秒後に再試行できます）' : '') };
+    }
+    const msg = (j && (j.message || j.result)) || text.slice(0, 200) || 'HTTP ' + r.status;
+    return { ok: false, note: '送信エラー: ' + msg };
   }
 
   function pushLog(entry) {
@@ -408,13 +427,13 @@
     const r = ch ? processText(raw, resolverFor(ch)) : { text: raw.trim(), missing: [] };
     if (!r.text) return false;
     if (r.missing.length) toast('未定義の変数があります: ' + r.missing.join(', '), 'warn');
-    const message = decorate(r.text, ch);
+    const message = decorate(r.text, ch); // コピー用（API は name / color パラメータで指定）
     const s = state.settings;
     const base = { name: ch && ch.name, color: ch && ch.color, text: r.text, raw };
 
     if (s.sendMode === 'api') {
-      if (!s.apiKey || !s.roomId) {
-        toast('API キーとルーム ID を設定してください', 'error');
+      if (!s.apiKey || !s.roomId || !s.roomPassword) {
+        toast('API キー・ルーム ID・ルームパスワードを設定してください', 'error');
         if (s.copyOnFail && await copyText(message)) {
           toast('代わりにクリップボードへコピーしました');
           pushLog({ ...base, via: 'コピー', ok: true });
@@ -422,7 +441,7 @@
         return false;
       }
       try {
-        const res = await postApi(message, ch);
+        const res = await postApi(r.text, ch);
         if (!res.ok) throw new Error(res.note);
         pushLog({ ...base, via: 'API', ok: true });
         toast(res.note);
@@ -912,7 +931,7 @@
   function fillSettings() {
     const s = state.settings;
     const f = $('#settingsForm');
-    for (const name of ['sendMode', 'clickAction', 'nameMode']) {
+    for (const name of ['sendMode', 'clickAction']) {
       $$(`input[name=${name}]`, f).forEach((r) => { r.checked = r.value === s[name]; });
     }
     $$('[data-setting]', f).forEach((el) => {

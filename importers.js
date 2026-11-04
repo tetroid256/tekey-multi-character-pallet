@@ -108,7 +108,15 @@
     Dru: '森羅魔法', Dem: '召異魔法', Aby: '奈落魔法', Gri: '秘奥魔法', Bar: '奏力', Alc: '賦術',
     War: '鼓咆', Mys: '占瞳', Dar: '理力', Geo: '相域',
   };
-  const YT_PACKS = { Tec: '技巧', Agi: '運動', Obs: '観察', Kno: '知識', Ini: '先制', Int: '先制(知)' };
+  const YT_PACKS = { Tec: '技巧', Agi: '運動', Obs: '観察', Kno: '知識' };
+  // 技能によって意味が変わる判定パッケージ
+  const YT_PACKS_BY_CLASS = {
+    War: { Agi: '先制', Int: '先制(知)' },
+    Bar: { Kno: '見識' },
+    Dar: { Int: '知識' },
+  };
+  // ダメージ・半減の行を作る魔法系統（それ以外は行使判定の行だけ）
+  const DAMAGE_MAGIC = new Set(['Sor', 'Con', 'Wiz', 'Pri', 'Fai', 'Mag', 'Dru', 'Dem', 'Aby', 'Gri']);
   const STATS = [
     ['Dex', 'A', '器用度', '器用'], ['Agi', 'B', '敏捷度', '敏捷'], ['Str', 'C', '筋力', '筋力'],
     ['Vit', 'D', '生命力', '生命'], ['Int', 'E', '知力', '知力'], ['Mnd', 'F', '精神力', '精神'],
@@ -146,7 +154,7 @@
       L.push(label + '=' + (num(d['stt' + code]) ?? 0));
     }
     for (const [, add, label] of STATS) {
-      L.push(label + '増強=' + (num(d['sttAdd' + add]) ?? 0));
+      L.push(label + '増強=' + (num(d['sttAddTotal' + add]) ?? num(d['sttAdd' + add]) ?? 0));
     }
 
     L.push('# ■技能レベル');
@@ -183,7 +191,7 @@
       if (!m) continue;
       const v = num(d[k]);
       if (v === null || !classes.some((c) => c.code === m[1])) continue;
-      const nm = (YT_CLASSES[m[1]] || m[1]) + (YT_PACKS[m[2]] || m[2]);
+      const nm = (YT_CLASSES[m[1]] || m[1]) + ((YT_PACKS_BY_CLASS[m[1]] || {})[m[2]] || YT_PACKS[m[2]] || m[2]);
       packs.push(nm);
       L.push(nm + '=' + v);
     }
@@ -194,10 +202,12 @@
       const m = /^magicPower([A-Z][a-z]{2})$/.exec(k);
       if (!m) continue;
       const v = num(d[k]);
-      if (v === null || v === 0) continue;
+      if (v === null || v === 0 || !classes.some((c) => c.code === m[1])) continue;
       const nm = YT_MAGIC[m[1]] || '魔力' + m[1];
-      magics.push(nm);
+      const cast = num(d['magicCastAdd' + m[1]]);
+      magics.push({ name: nm, damage: DAMAGE_MAGIC.has(m[1]), cast: !!cast });
       L.push(nm + '=' + v + '+{魔力修正}');
+      if (cast) L.push(nm + '行使修正=' + cast);
     }
 
     // 武器
@@ -212,18 +222,23 @@
       const n = weapons.length + 1;
       weapons.push(n);
       L.push('武器' + n + '=' + (wname || '武器' + n) + (usage ? '（' + usage + '）' : ''));
-      L.push('命中' + n + '=' + (num(d['weapon' + i + 'AccTotal']) ?? 0));
+      L.push('命中' + n + '=' + (num(d['weapon' + i + 'AccTotal']) ?? num(d['weapon' + i + 'Acc']) ?? 0));
       L.push('威力' + n + '=' + (rate ?? 0));
       L.push('C値' + n + '=' + (num(d['weapon' + i + 'Crit']) ?? 10));
-      L.push('追加D' + n + '=' + (num(d['weapon' + i + 'DmgTotal']) ?? 0));
+      L.push('追加D' + n + '=' + (num(d['weapon' + i + 'DmgTotal']) ?? num(d['weapon' + i + 'Dmg']) ?? 0));
     }
 
     // 回避・防護
     L.push('# ■防具');
-    const eva = num(d.defenseTotal1Eva) ?? num(d.defenseTotalAllEva) ?? 0;
-    const def = num(d.defenseTotal1Def) ?? num(d.defenseTotalAllDef) ?? 0;
-    L.push('回避1=' + eva);
-    L.push('防護1=' + def);
+    const defs = [];
+    for (let i = 1; i <= Math.max(num(d.defenseTotalNum) || 0, 1); i++) {
+      const eva = num(d['defenseTotal' + i + 'Eva']) ?? (i === 1 ? num(d.defenseTotalAllEva) : null);
+      const def = num(d['defenseTotal' + i + 'Def']) ?? (i === 1 ? num(d.defenseTotalAllDef) : null);
+      if (eva === null && def === null && i > 1) continue;
+      defs.push(i);
+      L.push('回避' + i + '=' + (eva ?? 0));
+      L.push('防護' + i + '=' + (def ?? 0));
+    }
 
     return {
       name,
@@ -231,8 +246,8 @@
       ytsheetUrl: url || '',
       fixedText: L.join('\n'),
       mods: defaultMods(magics.length > 0),
-      palettes: defaultPalettes({ weapons, magics, packs, hasLore: num(d.monsterLore) !== null, hasInit: num(d.initiative) !== null }),
-      summary: { name, classes, weapons: weapons.length, magics, packs },
+      palettes: defaultPalettes({ weapons, magics, packs, defs, hasLore: num(d.monsterLore) !== null, hasInit: num(d.initiative) !== null }),
+      summary: { name, classes, weapons: weapons.length, magics: magics.map((m) => m.name), packs },
     };
   }
 
@@ -246,7 +261,7 @@
     return m.map(([k, v]) => ({ k, v: String(v), d: String(v) }));
   }
 
-  function defaultPalettes({ weapons, magics, packs, hasLore, hasInit }) {
+  function defaultPalettes({ weapons, magics, packs, defs = [1], hasLore, hasInit }) {
     const out = [];
     const t = ['■冒険者判定'];
     for (const [, , , short] of STATS) t.push('2d+{冒険者}+{' + short + 'B} 冒険者＋' + short);
@@ -269,11 +284,15 @@
 
     if (magics.length) {
       const m = [];
-      for (const nm of magics) {
+      for (const mg of magics) {
+        const nm = mg.name;
         m.push('■' + nm);
-        m.push('2d+{' + nm + '}+{行使修正} ' + nm + '行使');
-        m.push('k10[({魔法C})]+{' + nm + '}+{魔法D修正} ダメージ／' + nm);
-        m.push('k10[(13)]+{' + nm + '}h+({魔法D修正}) 半減／' + nm);
+        m.push('2d+{' + nm + '}' + (mg.cast ? '+{' + nm + '行使修正}' : '') + '+{行使修正} ' + nm + '行使');
+        if (mg.damage) {
+          m.push('k10[({魔法C})]+{' + nm + '}+{魔法D修正} ダメージ／' + nm);
+          m.push('k10[(13)]+{' + nm + '}h+({魔法D修正}) 半減／' + nm);
+          m.push('k10[(13)]+{' + nm + '}+{回復量修正} 回復量／' + nm);
+        }
         m.push('');
       }
       out.push({ label: '魔法', text: m.join('\n').trim() });
@@ -284,7 +303,7 @@
       text: [
         '2d+{生命抵抗}+{生命抵抗修正} 生命抵抗力',
         '2d+{精神抵抗}+{精神抵抗修正} 精神抵抗力',
-        '2d+{回避1}+{回避修正} 回避力',
+        ...defs.map((i) => '2d+{回避' + i + '}+{回避修正} 回避力' + (defs.length > 1 ? i : '')),
       ].join('\n'),
     });
     return out;

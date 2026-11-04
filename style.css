@@ -286,7 +286,7 @@ table.vars td { font-family: var(--mono); word-break: break-all; }
 .composer-preview .label { font-family: system-ui, sans-serif; color: var(--muted); margin-right: 4px; }
 .composer-row { display: flex; gap: 8px; align-items: flex-end; }
 .composer-row textarea { resize: none; min-height: 34px; font-family: var(--mono); font-size: 13px; }
-.composer-row button { height: 34px; padding: 0 18px; }
+.composer-row button { height: 34px; padding: 0 18px; white-space: nowrap; flex: none; }
 
 /* ---------- サイドパネル ---------- */
 .panel {
