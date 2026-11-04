@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tekey マルチキャラパレット</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Tekey マルチキャラパレット</h1>
+    <div class="mode-indicator" id="modeIndicator" title="送信方法（設定で変更）"></div>
+    <div class="header-actions">
+      <button type="button" id="btnImportMenu">取込 / 保存</button>
+      <button type="button" id="btnSettings">⚙ 設定</button>
+    </div>
+  </header>
+
+  <nav class="char-tabs" id="charTabs" aria-label="キャラクター"></nav>
+
+  <main class="layout" id="layout">
+    <section class="palette-area">
+      <div class="palette-tabs" id="paletteTabs" role="tablist"></div>
+      <div class="palette-body" id="paletteBody"></div>
+      <div class="composer">
+        <div class="composer-preview" id="composerPreview"></div>
+        <div class="composer-row">
+          <textarea id="composerInput" rows="1" placeholder="チャット / コマンド（{変数} 使用可）  Enter で送信・Shift+Enter で改行"></textarea>
+          <button type="button" id="btnSend" class="primary">送信</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="panel" id="modsPanel">
+        <div class="panel-head">
+          <h2>バフ・デバフ</h2>
+          <div class="panel-actions">
+            <button type="button" id="btnModsReset" title="すべて初期値に戻す">全リセット</button>
+            <button type="button" id="btnModsEdit">編集</button>
+          </div>
+        </div>
+        <div id="modsBody"></div>
+      </section>
+      <section class="panel log-panel">
+        <div class="panel-head">
+          <h2>送信履歴</h2>
+          <div class="panel-actions"><button type="button" id="btnLogClear">クリア</button></div>
+        </div>
+        <ol id="logList" class="log-list"></ol>
+      </section>
+    </aside>
+  </main>
+
+  <section class="empty-state" id="emptyState" hidden>
+    <h2>キャラクターがまだいません</h2>
+    <p>次のいずれかから始めてください。</p>
+    <div class="empty-actions">
+      <button type="button" class="primary" data-action="ytsheet">ゆとシートII から取込</button>
+      <button type="button" data-action="tekeyJson">Tekey のパレット JSON を読込</button>
+      <button type="button" data-action="newChar">空のキャラを作成</button>
+    </div>
+  </section>
+
+  <!-- 取込 / 保存メニュー -->
+  <dialog id="importDialog">
+    <form method="dialog" class="dialog">
+      <h2>取込 / 保存</h2>
+      <div class="menu-list">
+        <button type="button" data-action="ytsheet">ゆとシートII から取込…</button>
+        <button type="button" data-action="tekeyJson">Tekey のパレット JSON を読込…</button>
+        <button type="button" data-action="newChar">空のキャラを追加</button>
+        <hr>
+        <button type="button" data-action="exportApp">アプリデータを書き出し（JSON）</button>
+        <button type="button" data-action="importApp">アプリデータを読み込み（JSON）…</button>
+      </div>
+      <div class="dialog-actions"><button value="close">閉じる</button></div>
+    </form>
+  </dialog>
+
+  <!-- ゆとシート取込 -->
+  <dialog id="ytsheetDialog">
+    <form method="dialog" class="dialog wide" id="ytsheetForm">
+      <h2>ゆとシートII（SW2.5）から取込</h2>
+      <label class="field">キャラシート URL
+        <input type="url" id="ytUrl" placeholder="https://yutorize.2-d.jp/ytsheet/sw2.5/?id=xxxxxx">
+      </label>
+      <p class="hint">取得できない場合（ブラウザの CORS 制限など）は、<a id="ytJsonLink" href="#" target="_blank" rel="noopener">JSON 出力</a> を開いて中身をすべてコピーし、下に貼り付けてください。</p>
+      <label class="field">JSON を貼り付け（任意）
+        <textarea id="ytJson" rows="5" placeholder='{"characterName": ...}'></textarea>
+      </label>
+      <fieldset class="field">
+        <legend>取込先</legend>
+        <label><input type="radio" name="ytTarget" value="new" checked> 新しいキャラとして追加</label>
+        <label><input type="radio" name="ytTarget" value="update" id="ytTargetUpdate"> 選択中のキャラの固定値を更新（パレット・バフは維持）</label>
+      </fieldset>
+      <p class="error" id="ytError" hidden></p>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>キャンセル</button>
+        <button type="button" class="primary" id="btnYtImport">取込</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 設定 -->
+  <dialog id="settingsDialog">
+    <form method="dialog" class="dialog wide" id="settingsForm">
+      <h2>設定</h2>
+
+      <fieldset class="field">
+        <legend>送信方法</legend>
+        <label><input type="radio" name="sendMode" value="api"> Tekey API で直接送信</label>
+        <label><input type="radio" name="sendMode" value="copy"> クリップボードにコピー（Tekey に貼り付け）</label>
+        <label class="inline"><input type="checkbox" data-setting="copyOnFail"> API 送信に失敗したらコピーする</label>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend>パレットをクリックしたとき</legend>
+        <label><input type="radio" name="clickAction" value="fill"> 入力欄に入れる（Enter で送信）</label>
+        <label><input type="radio" name="clickAction" value="send"> すぐに送信する</label>
+        <p class="hint">Shift を押しながらクリックすると逆の動作になります。各行の ▶ はいつでも即送信です。</p>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend>名前と文字色の指定方法</legend>
+        <label><input type="radio" name="nameMode" value="inline"> メッセージ末尾に <code>@[name]:名前@#色</code> を付ける</label>
+        <label><input type="radio" name="nameMode" value="param"> API の name / color パラメータで送る</label>
+        <label><input type="radio" name="nameMode" value="none"> 付けない</label>
+      </fieldset>
+
+      <fieldset class="field grid2">
+        <legend>Tekey API</legend>
+        <label>API キー<input type="password" data-setting="apiKey" autocomplete="off"></label>
+        <label>ルーム ID<input type="text" data-setting="roomId" autocomplete="off"></label>
+        <label>ルームパスワード<input type="password" data-setting="roomPassword" autocomplete="off"></label>
+        <label>送信先タブ（既定）<input type="text" data-setting="tab" placeholder="空欄で左端のタブ"></label>
+        <label>ダイスボット（システムID）<input type="text" data-setting="system" placeholder="SwordWorld2.5"></label>
+        <label>エンドポイント<input type="url" data-setting="endpoint"></label>
+      </fieldset>
+      <p class="hint">API キーなどはこのブラウザの localStorage にだけ保存されます。アプリデータの書き出しには含まれません。</p>
+
+      <details class="field">
+        <summary>詳細（API パラメータ名・通信方式）</summary>
+        <p class="hint">Tekey API のパラメータ名がヘルプと違う場合はここで合わせてください。空欄の項目は送信しません。</p>
+        <div class="grid2">
+          <label>API キー<input type="text" data-param="apiKey"></label>
+          <label>コマンド名<input type="text" data-param="command"></label>
+          <label>コマンド値<input type="text" data-param="commandValue"></label>
+          <label>ルーム ID<input type="text" data-param="roomId"></label>
+          <label>パスワード<input type="text" data-param="roomPassword"></label>
+          <label>メッセージ<input type="text" data-param="message"></label>
+          <label>名前<input type="text" data-param="name"></label>
+          <label>文字色<input type="text" data-param="color"></label>
+          <label>タブ<input type="text" data-param="tab"></label>
+          <label>ダイスボット<input type="text" data-param="system"></label>
+          <label>HTTP メソッド
+            <select data-setting="method"><option value="POST">POST</option><option value="GET">GET</option></select>
+          </label>
+        </div>
+        <label class="inline"><input type="checkbox" data-setting="colorHash"> 色パラメータに # を付ける</label>
+        <label class="inline"><input type="checkbox" data-setting="readResponse"> API の応答を読む（CORS が許可されている場合のみ動きます）</label>
+        <p class="hint">応答を読まない場合（既定）は no-cors で送信します。届いたかどうかは Tekey の画面で確認してください。</p>
+      </details>
+
+      <div class="dialog-actions">
+        <button type="button" id="btnTestSend">テスト送信</button>
+        <button value="close" class="primary">閉じる</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input type="file" id="fileTekey" accept=".json,application/json" hidden>
+  <input type="file" id="fileApp" accept=".json,application/json" hidden>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="engine.js"></script>
+  <script src="importers.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
